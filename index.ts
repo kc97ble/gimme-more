@@ -7,6 +7,14 @@ import multer from 'multer';
 import path from 'path';
 import { z } from 'zod';
 
+// Utility functions
+const sanitizeFilename = (name: string): string => {
+  // Keep only the base name to avoid directory traversal
+  const baseName = path.basename(name);
+  // Replace non-ASCII characters and path separators
+  return baseName.replace(/[^\x00-\x7F]|[\/\\]/g, (match) => encodeURIComponent(match));
+};
+
 // Load environment variables from .env file
 dotenv.config();
 
@@ -269,15 +277,6 @@ app.post('/upload', authenticate, (req: Request, res: Response) => {
       const username = req.session.user!;
       const userDir = path.join(ENV.OUTPUT_DIR, username);
 
-      // Sanitize the filename to prevent path traversal and security issues
-      const sanitizeFilename = (name: string): string => {
-        // Keep only the base name to avoid directory traversal
-        const baseName = path.basename(name);
-
-        // Replace non-ASCII characters and path separators
-        return baseName.replace(/[^\x00-\x7F]|[\/\\]/g, (match) => encodeURIComponent(match));
-      };
-
       const filename = sanitizeFilename(req.file.originalname);
 
       // Create directories if they don't exist
@@ -334,11 +333,20 @@ app.get('/list', authenticate, (req: Request, res: Response) => {
     // File list table HTML
     const fileList = files.length > 0 
       ? `<table>
-          <thead><tr><th>Filename</th><th>Size</th></tr></thead>
+          <thead><tr><th>Filename</th><th>Size</th><th>Action</th></tr></thead>
           <tbody>
             ${files.map(file => {
               const stats = fs.statSync(path.join(userDir, file));
-              return `<tr><td>${file}</td><td>${(stats.size / 1024).toFixed(2)} KB</td></tr>`;
+              return `<tr>
+                <td>${file}</td>
+                <td>${(stats.size / 1024).toFixed(2)} KB</td>
+                <td>
+                  <form action="/delete" method="POST" style="margin:0">
+                    <input type="hidden" name="filename" value="${file}">
+                    <button type="submit" class="secondary">Delete</button>
+                  </form>
+                </td>
+              </tr>`;
             }).join('')}
           </tbody>
         </table>`
@@ -364,6 +372,40 @@ app.get('/list', authenticate, (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error listing files:', error);
     res.status(500).send('Error listing files');
+  }
+});
+
+// Delete file handler
+app.post('/delete', authenticate, (req: Request, res: Response) => {
+  try {
+    const username = req.session.user!;
+    const filename = req.body.filename;
+    
+    // Validate filename
+    if (!filename || typeof filename !== 'string') {
+      res.status(400).send('Invalid filename');
+      return;
+    }
+    
+    // Sanitize the filename and build the path
+    const sanitizedFilename = sanitizeFilename(filename);
+    const userDir = path.join(ENV.OUTPUT_DIR, username);
+    const filePath = path.join(userDir, sanitizedFilename);
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      res.status(404).send('File not found');
+      return;
+    }
+    
+    // Delete the file
+    fs.unlinkSync(filePath);
+    
+    // Redirect back to the list page
+    res.redirect('/list');
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    res.status(500).send('Error deleting file');
   }
 });
 
