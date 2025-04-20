@@ -1,3 +1,5 @@
+config/*.txt
+
 # Logs
 logs
 *.log
