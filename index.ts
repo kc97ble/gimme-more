@@ -475,11 +475,136 @@ app.get("/", (req: Request, res: Response) => {
               <p>Not logged in. <a href="/login" role="button">Login</a></p>
               <ul>
                 <li><a href="/users">View Users</a></li>
+                <li><a href="/uploaded-live">Live Uploads Monitor</a></li>
               </ul>
             </div>
           </main>`,
       })
     );
+  }
+});
+
+// Route for live updates of uploaded files
+app.get("/uploaded-live", (_req: Request, res: Response) => {
+  res.send(
+    layout({
+      title: "Live Uploads Monitor",
+      body: `
+        <main>
+          <h1>Live Uploads Monitor</h1>
+          <p>Auto-refreshing every 5 seconds...</p>
+          <div style="margin-bottom: 1rem;">
+            <button id="refreshButton">Refresh Now</button>
+            <span id="lastRefreshed" style="margin-left: 1rem; font-size: 0.9rem; color: #666;"></span>
+          </div>
+          <pre id="uploadedData" style="background-color: #f5f5f5; padding: 1rem; border-radius: 4px; overflow: auto; max-height: 600px;">Loading...</pre>
+
+          <script>
+            // Function to format the current time
+            function formatTime() {
+              const now = new Date();
+              return now.toLocaleTimeString();
+            }
+
+            // Function to update the last refreshed time
+            function updateLastRefreshed() {
+              document.getElementById('lastRefreshed').textContent = 'Last refreshed: ' + formatTime();
+            }
+
+            // Function to fetch data from /uploaded endpoint
+            async function fetchUploadedData() {
+              try {
+                document.getElementById('refreshButton').disabled = true;
+                const response = await fetch('/uploaded');
+                if (!response.ok) {
+                  throw new Error('Failed to fetch data');
+                }
+                const data = await response.text();
+                document.getElementById('uploadedData').textContent = data || 'No uploads found';
+                updateLastRefreshed();
+              } catch (error) {
+                console.error('Error fetching data:', error);
+                document.getElementById('uploadedData').textContent = 'Error loading data';
+              } finally {
+                document.getElementById('refreshButton').disabled = false;
+              }
+            }
+
+            // Attach event listener to refresh button
+            document.getElementById('refreshButton').addEventListener('click', fetchUploadedData);
+
+            // Initial fetch
+            fetchUploadedData();
+
+            // Set up auto-refresh every 5 seconds
+            setInterval(fetchUploadedData, 5000);
+          </script>
+
+          <p><a href="/">Back to Home</a></p>
+        </main>
+      `
+    })
+  );
+});
+
+// Route to list all users and their uploaded files in text format
+app.get("/uploaded", (req: Request, res: Response) => {
+  try {
+    const usernames = USERS.map((user) => user.username);
+
+    // Structure to hold user data with timestamp for sorting
+    interface UserData {
+      username: string;
+      latestTimestamp: Date;
+      files: string[];
+    }
+
+    // Generate user data objects
+    const usersData: UserData[] = [];
+
+    for (const username of usernames) {
+      const userDir = path.join(ENV.OUTPUT_DIR, username);
+
+      // Check if user directory exists and has files
+      if (fs.existsSync(userDir)) {
+        const files = fs.readdirSync(userDir);
+
+        if (files.length > 0) {
+          // Get latest modification time from all files
+          let latestMtime = new Date(0); // Start with epoch time
+
+          for (const file of files) {
+            const filePath = path.join(userDir, file);
+            const stats = fs.statSync(filePath);
+            if (stats.mtime > latestMtime) {
+              latestMtime = stats.mtime;
+            }
+          }
+
+          usersData.push({
+            username,
+            latestTimestamp: latestMtime,
+            files
+          });
+        }
+      }
+    }
+
+    // Sort by latest timestamp (most recent first)
+    usersData.sort((a, b) => b.latestTimestamp.getTime() - a.latestTimestamp.getTime());
+
+    // Convert to output format
+    const outputLines = usersData.map(userData => {
+      const timestamp = userData.latestTimestamp.toISOString();
+      return `${timestamp} ${userData.username}: ${userData.files.join(", ")}`;
+    });
+
+    // Send text response
+    res.setHeader("Content-Type", "text/plain");
+    res.send(outputLines.join("\n"));
+  } catch (error) {
+    console.error("Error generating uploaded files list:", error);
+    res.status(500).send("Error generating uploaded files list");
   }
 });
 
