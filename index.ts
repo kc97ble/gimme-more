@@ -225,8 +225,21 @@ app.get("/logout", (req: Request, res: Response) => {
 app.get("/users", (_req: Request, res: Response) => {
   try {
     const usernames = USERS.map((user) => user.username);
-    res.setHeader("Content-Type", "text/plain");
-    res.send(usernames.join("\n"));
+
+    res.send(
+      layout({
+        title: "Available Users",
+        body: `
+          <main>
+            <h1>Available Users</h1>
+            <ul>
+              ${usernames.map((username) => `<li>${username}</li>`).join("")}
+            </ul>
+            <p><a href="/login">Login</a></p>
+            <p><a href="/">Back to Home</a></p>
+          </main>`,
+      })
+    );
   } catch (error) {
     console.error("Error processing users:", error);
     res.status(500).json({ error: "Failed to process users" });
