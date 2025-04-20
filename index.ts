@@ -1,11 +1,10 @@
-import express, { Request, Response, NextFunction } from 'express';
-import fs from 'fs';
-import path from 'path';
-import session from 'express-session';
 import cookieParser from 'cookie-parser';
-import multer from 'multer';
-import { format } from 'date-fns';
 import dotenv from 'dotenv';
+import express, { NextFunction, Request, Response } from 'express';
+import session from 'express-session';
+import fs from 'fs';
+import multer from 'multer';
+import path from 'path';
 import { z } from 'zod';
 
 // Load environment variables from .env file
@@ -124,7 +123,7 @@ const authenticate = (req: Request, res: Response, next: NextFunction): void => 
   next();
 };
 
-app.get('/login', (req: Request, res: Response) => {
+app.get('/login', (_req: Request, res: Response) => {
   res.send(`<!DOCTYPE html>
 <html>
 <head>
@@ -189,7 +188,7 @@ app.get('/logout', (req: Request, res: Response) => {
   });
 });
 
-app.get('/users', (req: Request, res: Response) => {
+app.get('/users', (_req: Request, res: Response) => {
   try {
     const usernames = USERS.map(user => user.username);
 
@@ -249,7 +248,7 @@ app.get('/upload', authenticate, (req: Request, res: Response) => {
 });
 
 // Handle file upload
-app.post('/upload', authenticate, (req: Request, res: Response, next: NextFunction) => {
+app.post('/upload', authenticate, (req: Request, res: Response) => {
   upload.single('file')(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
@@ -268,9 +267,7 @@ app.post('/upload', authenticate, (req: Request, res: Response, next: NextFuncti
       }
 
       const username = req.session.user!;
-      const timestamp = format(new Date(), 'yyyy-MM-dd-HHmmss');
       const userDir = path.join(ENV.OUTPUT_DIR, username);
-      const timestampDir = path.join(userDir, timestamp);
 
       // Sanitize the filename to prevent path traversal and security issues
       const sanitizeFilename = (name: string): string => {
@@ -290,12 +287,9 @@ app.post('/upload', authenticate, (req: Request, res: Response, next: NextFuncti
       if (!fs.existsSync(userDir)) {
         fs.mkdirSync(userDir, { recursive: true });
       }
-      if (!fs.existsSync(timestampDir)) {
-        fs.mkdirSync(timestampDir, { recursive: true });
-      }
 
       // Save the file
-      const filePath = path.join(timestampDir, filename);
+      const filePath = path.join(userDir, filename);
       fs.writeFileSync(filePath, req.file.buffer);
 
       // Success page

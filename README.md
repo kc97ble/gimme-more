@@ -57,4 +57,4 @@ Users are defined in a plain text file with each line containing `username:passw
 
 - Only accepts files with `.c`, `.cpp`, or `.py` extensions
 - Maximum file size: 64KB
-- Files are saved to: `<OUTPUT_DIR>/<username>/<timestamp>/<filename>`
+- Files are saved to: `<OUTPUT_DIR>/<username>/<filename>`
