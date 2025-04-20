@@ -1,4 +1,5 @@
-config/*.txt
+config
+uploads
 
 # Logs
 logs
