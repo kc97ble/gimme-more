@@ -71,7 +71,11 @@ app.use(session({
 function getUsers(): User[] {
   try {
     const fileContent = fs.readFileSync(ENV.CONFIG_USERS, 'utf-8');
-    const lines = fileContent.split('\n').filter(line => line.trim() !== '');
+    // Split by line breaks and handle whitespace properly
+    const lines = fileContent
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line !== '');
 
     return lines.map(line => {
       const [username, password] = line.split(':');
@@ -267,16 +271,16 @@ app.post('/upload', authenticate, (req: Request, res: Response, next: NextFuncti
       const timestamp = format(new Date(), 'yyyy-MM-dd-HHmmss');
       const userDir = path.join(ENV.OUTPUT_DIR, username);
       const timestampDir = path.join(userDir, timestamp);
-      
+
       // Sanitize the filename to prevent path traversal and security issues
       const sanitizeFilename = (name: string): string => {
         // Keep only the base name to avoid directory traversal
         const baseName = path.basename(name);
-        
+
         // Replace non-ASCII characters and path separators
         return baseName.replace(/[^\x00-\x7F]|[\/\\]/g, (match) => encodeURIComponent(match));
       };
-      
+
       const filename = sanitizeFilename(req.file.originalname);
 
       // Create directories if they don't exist
