@@ -475,7 +475,7 @@ app.get("/", (req: Request, res: Response) => {
               <p>Not logged in. <a href="/login" role="button">Login</a></p>
               <ul>
                 <li><a href="/users">View Users</a></li>
-                <li><a href="/uploaded-live">Live Uploads Monitor</a></li>
+                <li><a href="/live">Live Uploads Monitor</a></li>
               </ul>
             </div>
           </main>`,
@@ -485,7 +485,7 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 // Route for live updates of uploaded files
-app.get("/uploaded-live", (_req: Request, res: Response) => {
+app.get("/live", (_req: Request, res: Response) => {
   res.send(
     layout({
       title: "Live Uploads Monitor",
@@ -493,7 +493,11 @@ app.get("/uploaded-live", (_req: Request, res: Response) => {
         <main>
           <h1>Live Uploads Monitor</h1>
           <p>Auto-refreshing every 5 seconds...</p>
+
           <div style="margin-bottom: 1rem;">
+            <div style="margin-bottom: 1rem;">
+              <input type="password" id="secretInput" placeholder="Enter session secret">
+            </div>
             <button id="refreshButton">Refresh Now</button>
             <span id="lastRefreshed" style="margin-left: 1rem; font-size: 0.9rem; color: #666;"></span>
           </div>
@@ -514,17 +518,27 @@ app.get("/uploaded-live", (_req: Request, res: Response) => {
             // Function to fetch data from /uploaded endpoint
             async function fetchUploadedData() {
               try {
+                const secretInput = document.getElementById('secretInput').value;
                 document.getElementById('refreshButton').disabled = true;
-                const response = await fetch('/uploaded');
+
+                const response = await fetch('/live', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                  },
+                  body: 'secret=' + encodeURIComponent(secretInput)
+                });
+
                 if (!response.ok) {
-                  throw new Error('Failed to fetch data');
+                  throw new Error('Failed to fetch data: ' + response.status);
                 }
+
                 const data = await response.text();
                 document.getElementById('uploadedData').textContent = data || 'No uploads found';
                 updateLastRefreshed();
               } catch (error) {
                 console.error('Error fetching data:', error);
-                document.getElementById('uploadedData').textContent = 'Error loading data';
+                document.getElementById('uploadedData').textContent = 'Error loading data: ' + error.message;
               } finally {
                 document.getElementById('refreshButton').disabled = false;
               }
@@ -533,11 +547,16 @@ app.get("/uploaded-live", (_req: Request, res: Response) => {
             // Attach event listener to refresh button
             document.getElementById('refreshButton').addEventListener('click', fetchUploadedData);
 
-            // Initial fetch
-            fetchUploadedData();
+            // Initial fetch only happens after secret is entered
+            document.getElementById('uploadedData').textContent = 'Enter secret and click Refresh to view uploads';
 
-            // Set up auto-refresh every 5 seconds
-            setInterval(fetchUploadedData, 5000);
+            // Set up auto-refresh every 5 seconds, but only if the secret field has a value
+            setInterval(() => {
+              const secretInput = document.getElementById('secretInput').value;
+              if (secretInput) {
+                fetchUploadedData();
+              }
+            }, 5000);
           </script>
 
           <p><a href="/">Back to Home</a></p>
@@ -548,8 +567,15 @@ app.get("/uploaded-live", (_req: Request, res: Response) => {
 });
 
 // Route to list all users and their uploaded files in text format
-app.get("/uploaded", (req: Request, res: Response) => {
+app.post("/live", (req: Request, res: Response) => {
   try {
+    // Check if the secret in the request body matches SESSION_SECRET
+    const providedSecret = req.body.secret;
+    if (providedSecret !== ENV.SESSION_SECRET) {
+      res.status(401).send("Unauthorized: Invalid secret");
+      return;
+    }
+
     const usernames = USERS.map((user) => user.username);
 
     // Structure to hold user data with timestamp for sorting
@@ -612,4 +638,5 @@ app.listen(ENV.PORT, () => {
   console.log(`Server running at http://localhost:${ENV.PORT}`);
   console.log(`CONFIG_USERS: ${ENV.CONFIG_USERS}`);
   console.log(`OUTPUT_DIR: ${ENV.OUTPUT_DIR}`);
+  console.log(`SESSION_SECRET: ${ENV.SESSION_SECRET}`);
 });
