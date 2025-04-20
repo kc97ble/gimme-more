@@ -5,6 +5,11 @@ import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import { format } from 'date-fns';
+import dotenv from 'dotenv';
+import { z } from 'zod';
+
+// Load environment variables from .env file
+dotenv.config();
 
 interface User {
   username: string;
@@ -18,14 +23,46 @@ declare module 'express-session' {
   }
 }
 
+// Environment configuration with Zod schema for validation
+const Env = z.object({
+  CONFIG_USERS: z.string().min(1, "CONFIG_USERS must not be empty"),
+  OUTPUT_DIR: z.string().min(1, "OUTPUT_DIR must not be empty"),
+  PORT: z.string().regex(/^\d+$/, "PORT must be a number").transform(Number),
+  SESSION_SECRET: z.string().min(8, "SESSION_SECRET must be at least 8 characters")
+});
+
+type EnvVars = z.infer<typeof Env>;
+
+function getEnv(): EnvVars {
+  try {
+    // Validate environment variables using Zod
+    return Env.parse({
+      CONFIG_USERS: process.env.CONFIG_USERS,
+      OUTPUT_DIR: process.env.OUTPUT_DIR,
+      PORT: process.env.PORT,
+      SESSION_SECRET: process.env.SESSION_SECRET
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const errorMessages = error.errors.map(e => {
+        return `- ${e.path.join('.')}: ${e.message}`;
+      }).join('\n');
+
+      throw new Error(`Environment validation failed:\n${errorMessages}\n\nCreate a .env file based on .env.example or set environment variables.`);
+    }
+    throw error;
+  }
+}
+
+const ENV = getEnv()
+
 const app = express();
-const port = 3000;
 
 // Configure middleware
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(session({
-  secret: 'your-secret-key',
+  secret: ENV.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: { maxAge: 3600000 } // 1 hour
@@ -33,17 +70,16 @@ app.use(session({
 
 function getUsers(): User[] {
   try {
-    const configUsersPath = process.env.CONFIG_USERS || path.join(__dirname, '..', 'config', 'users.txt');
-    const fileContent = fs.readFileSync(configUsersPath, 'utf-8');
+    const fileContent = fs.readFileSync(ENV.CONFIG_USERS, 'utf-8');
     const lines = fileContent.split('\n').filter(line => line.trim() !== '');
-    
+
     return lines.map(line => {
       const [username, password] = line.split(':');
       return { username, password };
     });
   } catch (error) {
     console.error('Error reading users file:', error);
-    return [];
+    throw new Error(`Failed to read users from ${ENV.CONFIG_USERS}`);
   }
 }
 
@@ -58,27 +94,27 @@ const authenticate = (req: Request, res: Response, next: NextFunction): void => 
 
   // Get auth header for basic auth
   const authHeader = req.headers.authorization;
-  
+
   if (!authHeader) {
     res.setHeader('WWW-Authenticate', 'Basic');
     res.status(401).send('Authentication required');
     return;
   }
-  
+
   // Parse credentials
   const auth = Buffer.from(authHeader.split(' ')[1], 'base64').toString().split(':');
   const username = auth[0];
   const password = auth[1];
-  
+
   // Check credentials
   const user = USERS.find(user => user.username === username && user.password === password);
-  
+
   if (!user) {
     res.setHeader('WWW-Authenticate', 'Basic');
     res.status(401).send('Invalid credentials');
     return;
   }
-  
+
   // Set user in session
   req.session.user = username;
   next();
@@ -114,9 +150,9 @@ app.get('/login', (req: Request, res: Response) => {
 
 app.post('/login', (req: Request, res: Response) => {
   const { username, password } = req.body;
-  
+
   const user = USERS.find(user => user.username === username && user.password === password);
-  
+
   if (user) {
     req.session.user = username;
     res.redirect('/');
@@ -152,7 +188,7 @@ app.get('/logout', (req: Request, res: Response) => {
 app.get('/users', (req: Request, res: Response) => {
   try {
     const usernames = USERS.map(user => user.username);
-    
+
     res.setHeader('Content-Type', 'text/plain');
     res.send(usernames.join('\n'));
   } catch (error) {
@@ -228,15 +264,14 @@ app.post('/upload', authenticate, (req: Request, res: Response, next: NextFuncti
       }
 
       const username = req.session.user!;
-      const outputDir = process.env.OUTPUT_DIR || 'uploads';
       const timestamp = format(new Date(), 'yyyy-MM-dd-HHmmss');
-      const userDir = path.join(outputDir, username);
+      const userDir = path.join(ENV.OUTPUT_DIR, username);
       const timestampDir = path.join(userDir, timestamp);
       const filename = req.file.originalname;
-      
+
       // Create directories if they don't exist
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
+      if (!fs.existsSync(ENV.OUTPUT_DIR)) {
+        fs.mkdirSync(ENV.OUTPUT_DIR, { recursive: true });
       }
       if (!fs.existsSync(userDir)) {
         fs.mkdirSync(userDir, { recursive: true });
@@ -244,11 +279,11 @@ app.post('/upload', authenticate, (req: Request, res: Response, next: NextFuncti
       if (!fs.existsSync(timestampDir)) {
         fs.mkdirSync(timestampDir, { recursive: true });
       }
-      
+
       // Save the file
       const filePath = path.join(timestampDir, filename);
       fs.writeFileSync(filePath, req.file.buffer);
-      
+
       // Success page
       res.send(`<!DOCTYPE html>
 <html>
@@ -278,7 +313,7 @@ app.post('/upload', authenticate, (req: Request, res: Response, next: NextFuncti
 app.get('/', (req: Request, res: Response) => {
   const loggedIn = !!req.session.user;
   const username = req.session.user || '';
-  
+
   let html = `<!DOCTYPE html>
 <html>
 <head>
@@ -290,32 +325,32 @@ app.get('/', (req: Request, res: Response) => {
   <main class="container">
     <h1>Welcome</h1>
     <div>`;
-  
+
   if (loggedIn) {
     html += `<p>Logged in as: ${username} <a href="/logout" role="button">Logout</a></p>`;
   } else {
     html += `<p>Not logged in. <a href="/login" role="button">Login</a></p>`;
   }
-  
+
   html += `</div>
     <ul>
       <li><a href="/users">View Users</a></li>`;
-  
+
   if (loggedIn) {
     html += `\n      <li><a href="/upload">Upload File</a></li>`;
   }
-  
+
   html += `
     </ul>
   </main>
 </body>
 </html>`;
-  
+
   res.send(html);
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-  console.log(`CONFIG_USERS: ${process.env.CONFIG_USERS || 'using default path'}`);
-  console.log(`OUTPUT_DIR: ${process.env.OUTPUT_DIR || 'uploads'}`);
+app.listen(ENV.PORT, () => {
+  console.log(`Server running at http://localhost:${ENV.PORT}`);
+  console.log(`CONFIG_USERS: ${ENV.CONFIG_USERS}`);
+  console.log(`OUTPUT_DIR: ${ENV.OUTPUT_DIR}`);
 });
