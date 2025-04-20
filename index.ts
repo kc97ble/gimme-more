@@ -317,6 +317,56 @@ app.post('/upload', authenticate, (req: Request, res: Response) => {
   });
 });
 
+// List uploaded files
+app.get('/list', authenticate, (req: Request, res: Response) => {
+  try {
+    const username = req.session.user!;
+    const userDir = path.join(ENV.OUTPUT_DIR, username);
+    
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(userDir)) {
+      fs.mkdirSync(userDir, { recursive: true });
+    }
+    
+    // Get list of files
+    const files = fs.readdirSync(userDir);
+    
+    // File list table HTML
+    const fileList = files.length > 0 
+      ? `<table>
+          <thead><tr><th>Filename</th><th>Size</th></tr></thead>
+          <tbody>
+            ${files.map(file => {
+              const stats = fs.statSync(path.join(userDir, file));
+              return `<tr><td>${file}</td><td>${(stats.size / 1024).toFixed(2)} KB</td></tr>`;
+            }).join('')}
+          </tbody>
+        </table>`
+      : '<p>No files uploaded yet.</p>';
+    
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Your Files</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Your Files</h1>
+    <p>Logged in as: ${username}</p>
+    ${fileList}
+    <p><a href="/upload">Upload New File</a></p>
+    <p><a href="/">Back to Home</a></p>
+  </main>
+</body>
+</html>`);
+  } catch (error) {
+    console.error('Error listing files:', error);
+    res.status(500).send('Error listing files');
+  }
+});
+
 // Home page handler
 app.get('/', (req: Request, res: Response) => {
   const loggedIn = !!req.session.user;
@@ -346,6 +396,7 @@ app.get('/', (req: Request, res: Response) => {
 
   if (loggedIn) {
     html += `\n      <li><a href="/upload">Upload File</a></li>`;
+    html += `\n      <li><a href="/list">View Your Files</a></li>`;
   }
 
   html += `
