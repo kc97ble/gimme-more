@@ -267,7 +267,17 @@ app.post('/upload', authenticate, (req: Request, res: Response, next: NextFuncti
       const timestamp = format(new Date(), 'yyyy-MM-dd-HHmmss');
       const userDir = path.join(ENV.OUTPUT_DIR, username);
       const timestampDir = path.join(userDir, timestamp);
-      const filename = req.file.originalname;
+      
+      // Sanitize the filename to prevent path traversal and security issues
+      const sanitizeFilename = (name: string): string => {
+        // Keep only the base name to avoid directory traversal
+        const baseName = path.basename(name);
+        
+        // Replace non-ASCII characters and path separators
+        return baseName.replace(/[^\x00-\x7F]|[\/\\]/g, (match) => encodeURIComponent(match));
+      };
+      
+      const filename = sanitizeFilename(req.file.originalname);
 
       // Create directories if they don't exist
       if (!fs.existsSync(ENV.OUTPUT_DIR)) {
